@@ -79,7 +79,9 @@ const MenuButtonView = Class({
 
         The <O.PopOverView> instance to use to show the menu view.
     */
-    popOverView: null,
+    popOverView: function () {
+        return new PopOverView();
+    }.property(),
 
     /**
         Property: O.MenuButtonView#popOverViewOptions
