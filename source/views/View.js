@@ -1096,6 +1096,12 @@ const View = Class({
         if (view === oldView) {
             return this;
         }
+        if (!view) {
+            return this.removeView(oldView);
+        }
+        if (!oldView) {
+            return this.insertView(view);
+        }
         const children = this.get('childViews');
         const i = children.indexOf(oldView);
         const oldParent = view.get('parentView');
