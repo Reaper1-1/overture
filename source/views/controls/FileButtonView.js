@@ -146,8 +146,8 @@ const FileButtonView = Class({
             if (event.target === input && files.length) {
                 if (!this.get('isDisabled')) {
                     const target = this.get('target') || this;
-                    const method = this.get('method');
-                    const action = method ? null : this.get('action');
+                    const action = this.get('action');
+                    const method = action ? null : this.get('method');
                     if (method) {
                         target[method](files, this);
                     } else if (action) {

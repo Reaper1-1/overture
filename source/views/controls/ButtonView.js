@@ -258,7 +258,7 @@ const ButtonView = Class({
 
         The name of the event to fire on the <#target> when the button is
         activated. Note, you should set *either* the action property or the
-        <#method> property. If both are set, the action property will be
+        <#method> property. If both are set, the method property will be
         ignored.
     */
     action: null,
@@ -266,13 +266,13 @@ const ButtonView = Class({
     /**
         Property: O.ButtonView#method
         Type: String|null
-        Default: null
+        Default: 'click'
 
         The name of the method to call on the <#target> when the button is
         activated. Note, you should set *either* the <#action> property or the
-        method property. If both are set, the action property will be ignored.
+        method property. If both are set, the method property will be ignored.
     */
-    method: null,
+    method: 'click',
 
     /**
         Method: O.ButtonView#activate
@@ -295,8 +295,8 @@ const ButtonView = Class({
             this.isKeyActivation =
                 !!event && !!event.type && event.type.startsWith('key');
             const target = this.get('target') || this;
-            const method = this.get('method');
-            const action = method ? null : this.get('action');
+            const action = this.get('action');
+            const method = action ? null : this.get('method');
             if (method) {
                 target[method](this, event);
             } else if (action) {
@@ -305,6 +305,8 @@ const ButtonView = Class({
             this.fire('button:activate');
         }
     },
+
+    click() {},
 
     // --- Keep state in sync with render ---
 
