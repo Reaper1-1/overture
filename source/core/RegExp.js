@@ -84,9 +84,8 @@ let urlPattern =
 try {
     new RegExp(urlPattern);
 } catch (error) {
-    // We still support a few old browsers that don't support negative
-    // lookbehind.
-    urlPattern = urlPattern.replace('(?:^|(?<=[({[=\\s\\n]))', '');
+    // We still support a few old browsers that don't support lookbehind.
+    urlPattern = urlPattern.replace('(?:^|(?<=[<({[=\\s]))', '');
 }
 
 const url = new RegExp('\\b' + urlPattern, 'i');
