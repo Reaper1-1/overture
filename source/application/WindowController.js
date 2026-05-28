@@ -66,6 +66,15 @@ const WindowController = Class({
     */
 
     /**
+        Property: O.WindowController#lastFocusTime
+        Type: Number
+
+        The `timeStamp` of the most recent window `focus` event. 0 if it has not
+        been refocused since load. Comparable to the `timeStamp` of DOM events
+        in this document.
+    */
+
+    /**
         Property: O.WindowController#id
         Type: String
 
@@ -79,6 +88,7 @@ const WindowController = Class({
         window.name = this.id;
         this.isMaster = false;
         this.isFocused = document.hasFocus ? document.hasFocus() : true;
+        this.lastFocusTime = -Infinity;
         this.otherWindows = new Map();
         this._channel = null;
 
@@ -162,6 +172,7 @@ const WindowController = Class({
                 this.destroy();
                 break;
             case 'focus':
+                this.set('lastFocusTime', event.timeStamp);
                 this.set('isFocused', true);
                 break;
             case 'blur':
