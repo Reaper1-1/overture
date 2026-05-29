@@ -237,18 +237,6 @@ const Query = Class({
         return this;
     },
 
-    /**
-        Method: O.Query#setLoading
-
-        Sets the LOADING bit on the query's status value.
-
-        Returns:
-            {O.Query} Returns self.
-    */
-    setLoading() {
-        return this.set('status', this.get('status') | LOADING);
-    },
-
     // ---
 
     /**

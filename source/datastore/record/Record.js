@@ -172,23 +172,6 @@ const Record = Class({
         return this;
     },
 
-    /**
-        Method: O.Record#setLoading
-
-        Adds <O.Status.LOADING> to the current status value.
-
-        Returns:
-            {O.Record} Returns self.
-    */
-    setLoading() {
-        const storeKey = this.get('storeKey');
-        const status = this.get('status');
-        if (storeKey) {
-            this.get('store').setStatus(storeKey, status | LOADING);
-        }
-        return this;
-    },
-
     // ---
 
     /**
