@@ -343,7 +343,7 @@ const ListView = Class({
                         didError({
                             name: 'Model bug',
                             details: {
-                                log: list.log,
+                                log: list.get('log'),
                                 where: list.get('where'),
                                 sort: list.get('sort'),
                                 index: i,

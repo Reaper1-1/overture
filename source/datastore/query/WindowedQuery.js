@@ -266,10 +266,10 @@ const windowIsStillInUse = function (index, windowSize, prefetch, ranges) {
     const margin = prefetch * windowSize;
     for (let i = ranges.length - 1; i >= 0; i -= 1) {
         const range = ranges[i];
-        const rangeStart = range.start || 0;
         if (!('end' in range)) {
             return true;
         }
+        const rangeStart = range.start || 0;
         const rangeEnd = range.end;
         const rangeIntersectsWindow = intersect(
             start,
@@ -892,6 +892,9 @@ const WindowedQuery = Class({
         if (ranges) {
             for (let i = ranges.length - 1; i >= 0; i -= 1) {
                 const range = ranges[i].range;
+                if (!('start' in range) && !('end' in range)) {
+                    continue;
+                }
                 let observerStart = range.start || 0;
                 let observerEnd = 'end' in range ? range.end : length;
                 if (observerStart < 0) {

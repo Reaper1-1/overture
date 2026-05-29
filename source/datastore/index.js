@@ -2,6 +2,7 @@ export { RecordArray } from './query/RecordArray.js';
 export { Query } from './query/Query.js';
 export { LocalQuery } from './query/LocalQuery.js';
 export { WindowedQuery } from './query/WindowedQuery.js';
+export { SubsetQueryProxy } from './query/SubsetQueryProxy.js';
 export { AttributeErrors } from './record/AttributeErrors.js';
 export { Record } from './record/Record.js';
 export { attr, RecordAttribute } from './record/attr.js';
