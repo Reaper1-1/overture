@@ -1,0 +1,217 @@
+import assert from 'node:assert/strict';
+import { beforeEach, describe, test } from 'node:test';
+
+import {
+    ACCOUNT_ID,
+    makeStore,
+    seedRecords,
+    Status,
+    Todo,
+} from '../helpers.mjs';
+
+const { READY, DIRTY, NEW, DESTROYED, COMMITTING, EMPTY } = Status;
+
+describe('Store: store keys and ids', () => {
+    let store;
+    beforeEach(() => {
+        ({ store } = makeStore());
+    });
+
+    test('getStoreKey is stable for a given (type, id)', () => {
+        const a = store.getStoreKey(ACCOUNT_ID, Todo, 't1');
+        const b = store.getStoreKey(ACCOUNT_ID, Todo, 't1');
+        assert.equal(a, b);
+    });
+
+    test('getStoreKey with no id returns a fresh key each time', () => {
+        const a = store.getStoreKey(ACCOUNT_ID, Todo, undefined);
+        const b = store.getStoreKey(ACCOUNT_ID, Todo, undefined);
+        assert.notEqual(a, b);
+    });
+
+    test('distinct ids get distinct store keys', () => {
+        const a = store.getStoreKey(ACCOUNT_ID, Todo, 't1');
+        const b = store.getStoreKey(ACCOUNT_ID, Todo, 't2');
+        assert.notEqual(a, b);
+    });
+
+    test('store key resolves back to id and account', () => {
+        seedRecords(store, Todo, [{ id: 't1', title: 'one' }]);
+        const sk = store.getStoreKey(ACCOUNT_ID, Todo, 't1');
+        assert.equal(store.getIdFromStoreKey(sk), 't1');
+        assert.equal(store.getAccountIdFromStoreKey(sk), ACCOUNT_ID);
+    });
+
+    test('getStatus of an unknown store key is EMPTY', () => {
+        assert.equal(store.getStatus(9999999), EMPTY);
+    });
+});
+
+describe('Store: fetching records from the source', () => {
+    let store;
+    beforeEach(() => {
+        ({ store } = makeStore());
+    });
+
+    test('sourceDidFetchRecords loads data and marks records READY', () => {
+        seedRecords(store, Todo, [
+            { id: 't1', title: 'one', done: false },
+            { id: 't2', title: 'two', done: true },
+        ]);
+        const sk1 = store.getStoreKey(ACCOUNT_ID, Todo, 't1');
+        assert.ok(store.getStatus(sk1) & READY);
+        assert.equal(store.getData(sk1).title, 'one');
+
+        const record = store.getRecord(ACCOUNT_ID, Todo, 't2');
+        assert.equal(record.get('title'), 'two');
+        assert.equal(record.get('done'), true);
+    });
+
+    test('isAll fetch marks the whole type READY', () => {
+        assert.equal(store.getTypeStatus(ACCOUNT_ID, Todo) & READY, 0);
+        seedRecords(store, Todo, [{ id: 't1', title: 'one' }]);
+        assert.ok(store.getTypeStatus(ACCOUNT_ID, Todo) & READY);
+    });
+
+    test('sourceDidFetchPartialRecords patches existing data', () => {
+        seedRecords(store, Todo, [{ id: 't1', title: 'one', priority: 1 }]);
+        store.sourceDidFetchPartialRecords(ACCOUNT_ID, Todo, {
+            t1: { title: 'one-patched' },
+        });
+        const sk = store.getStoreKey(ACCOUNT_ID, Todo, 't1');
+        assert.equal(store.getData(sk).title, 'one-patched');
+        // unspecified fields are retained
+        assert.equal(store.getData(sk).priority, 1);
+    });
+
+    test('sourceDidChangeIds remaps an id to a new id, keeping the store key', () => {
+        seedRecords(store, Todo, [{ id: 'old', title: 'one' }]);
+        const sk = store.getStoreKey(ACCOUNT_ID, Todo, 'old');
+        store.sourceDidChangeIds(ACCOUNT_ID, Todo, { old: 'new' });
+        assert.equal(store.getStoreKey(ACCOUNT_ID, Todo, 'new'), sk);
+        assert.equal(store.getIdFromStoreKey(sk), 'new');
+    });
+});
+
+describe('Store: in-memory data mutation', () => {
+    let store;
+    beforeEach(() => {
+        ({ store } = makeStore());
+    });
+
+    test('updateData marks the record DIRTY when changeIsDirty', () => {
+        const [sk] = seedRecords(store, Todo, [{ id: 't1', title: 'one' }]);
+        store.updateData(sk, { title: 'changed' }, true);
+        assert.equal(store.getData(sk).title, 'changed');
+        assert.ok(store.getStatus(sk) & DIRTY);
+        // `hasChanges` (the boolean) is recomputed by a run-loop-deferred
+        // checkForChanges; the per-type check is synchronous.
+        assert.ok(store.hasChangesForType(Todo));
+    });
+
+    test('revertData restores the committed value and clears DIRTY', () => {
+        const [sk] = seedRecords(store, Todo, [{ id: 't1', title: 'one' }]);
+        store.updateData(sk, { title: 'changed' }, true);
+        store.revertData(sk);
+        assert.equal(store.getData(sk).title, 'one');
+        assert.equal(store.getStatus(sk) & DIRTY, 0);
+    });
+});
+
+describe('Store: record lifecycle', () => {
+    let store;
+    let source;
+    let flush;
+    beforeEach(() => {
+        ({ store, source, flush } = makeStore());
+    });
+
+    test('editing a record through its accessor sets DIRTY and queues a commit need', () => {
+        seedRecords(store, Todo, [{ id: 't1', title: 'one' }]);
+        const record = store.getRecord(ACCOUNT_ID, Todo, 't1');
+        record.set('title', 'edited');
+        const sk = record.get('storeKey');
+        assert.ok(store.getStatus(sk) & DIRTY);
+        assert.equal(store.getData(sk).title, 'edited');
+        assert.ok(store.hasChangesForType(Todo));
+    });
+
+    test('new record is NEW+DIRTY and is sent to the source on commit', () => {
+        const record = new Todo(store);
+        record.set('title', 'fresh');
+        record.saveToStore();
+        const sk = record.get('storeKey');
+        assert.ok(store.getStatus(sk) & NEW);
+        assert.ok(store.getStatus(sk) & DIRTY);
+
+        store.commitChanges();
+        flush();
+
+        const commits = source.callsTo('commitChanges');
+        assert.equal(commits.length, 1);
+        assert.ok(store.getStatus(sk) & COMMITTING);
+    });
+
+    test('sourceDidCommitCreate assigns the server id and clears NEW', () => {
+        const record = new Todo(store);
+        record.set('title', 'fresh');
+        record.saveToStore();
+        const sk = record.get('storeKey');
+
+        store.commitChanges();
+        flush();
+        store.sourceDidCommitCreate({ [sk]: { id: 'server-1' } });
+
+        assert.equal(store.getIdFromStoreKey(sk), 'server-1');
+        assert.equal(store.getStatus(sk) & NEW, 0);
+        assert.ok(store.getStatus(sk) & READY);
+    });
+
+    test('destroyRecord moves the record to DESTROYED', () => {
+        seedRecords(store, Todo, [{ id: 't1', title: 'one' }]);
+        const record = store.getRecord(ACCOUNT_ID, Todo, 't1');
+        record.destroy();
+        flush();
+        assert.ok(store.getStatus(record.get('storeKey')) & DESTROYED);
+    });
+
+    test('fetchAll asks the source to load the whole type', () => {
+        store.fetchAll(ACCOUNT_ID, Todo, true);
+        const fetches = source.callsTo('fetchAllRecords');
+        assert.equal(fetches.length, 1);
+        assert.equal(fetches[0].Type, Todo);
+    });
+});
+
+describe('Store: queries', () => {
+    test('findAll returns READY store keys, filtered and sorted', () => {
+        const { store } = makeStore();
+        seedRecords(store, Todo, [
+            { id: 't1', title: 'banana', done: false },
+            { id: 't2', title: 'apple', done: false },
+            { id: 't3', title: 'cherry', done: true },
+        ]);
+
+        const notDone = store.findAll(
+            Todo,
+            (data) => !data.done,
+            (a, b) => (a.title < b.title ? -1 : a.title > b.title ? 1 : 0),
+        );
+        const titles = notDone.map((sk) => store.getData(sk).title);
+        assert.deepEqual(titles, ['apple', 'banana']);
+    });
+
+    test('findOne returns the first matching store key or null', () => {
+        const { store } = makeStore();
+        seedRecords(store, Todo, [
+            { id: 't1', title: 'one', done: false },
+            { id: 't2', title: 'two', done: true },
+        ]);
+        const sk = store.findOne(Todo, (data) => data.done);
+        assert.equal(store.getData(sk).title, 'two');
+        assert.equal(
+            store.findOne(Todo, (data) => data.title === 'nope'),
+            null,
+        );
+    });
+});

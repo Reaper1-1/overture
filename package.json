@@ -12,6 +12,7 @@
     "scripts": {
         "prepare": "npm run build",
         "build": "./build.js",
+        "test": "node --test 'test/**/*.test.mjs'",
         "lint": "npm run lint-eslint && npm run lint-prettier",
         "lint-eslint": "eslint source",
         "lint-prettier": "prettier --check source",
