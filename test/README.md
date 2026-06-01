@@ -27,10 +27,16 @@ test/
     helpers.mjs                       # shared store/query factories
     Status.test.mjs
     store/Store.test.mjs
+    store/NestedStore.test.mjs
+    store/UndoManager.test.mjs         # UndoManager + StoreUndoManager
+    store/MemoryManager.test.mjs
     source/AggregateSource.test.mjs
     query/LocalQuery.test.mjs
     query/WindowedQuery.test.mjs       # incl. Sentry 7380278134 regression
     query/windowed-query-sentry.fixture.mjs
+    record/RecordAttribute.test.mjs    # attr, validation, toOne, toMany
+    record/RecordResult.test.mjs       # getResult / ifSuccess promises
+    record/ValidationError.test.mjs
 ```
 
 ## Notes
