@@ -9,7 +9,8 @@ import {
     Todo,
 } from '../helpers.mjs';
 
-const { READY, DIRTY, NEW, DESTROYED, COMMITTING, EMPTY } = Status;
+const { READY, DIRTY, NEW, DESTROYED, COMMITTING, EMPTY, NON_EXISTENT } =
+    Status;
 
 describe('Store: store keys and ids', () => {
     let store;
@@ -213,5 +214,110 @@ describe('Store: queries', () => {
             store.findOne(Todo, (data) => data.title === 'nope'),
             null,
         );
+    });
+});
+
+describe('Store: multiple accounts', () => {
+    test('the same id in different accounts gets distinct, isolated store keys', () => {
+        const { store } = makeStore();
+        store.addAccount('acc2', {});
+
+        const skA = store.getStoreKey('acc1', Todo, 'shared');
+        const skB = store.getStoreKey('acc2', Todo, 'shared');
+        assert.notEqual(skA, skB);
+        assert.equal(store.getAccountIdFromStoreKey(skA), 'acc1');
+        assert.equal(store.getAccountIdFromStoreKey(skB), 'acc2');
+    });
+});
+
+describe('Store: source error and not-found handling', () => {
+    test('sourceCouldNotFindRecords marks the record NON_EXISTENT', () => {
+        const { store } = makeStore();
+        const sk = store.getStoreKey(ACCOUNT_ID, Todo, 'ghost');
+        store.fetchData(sk);
+        store.sourceCouldNotFindRecords(ACCOUNT_ID, Todo, ['ghost']);
+        assert.ok(store.getStatus(sk) & NON_EXISTENT);
+    });
+
+    test('a permanent create failure clears NEW and COMMITTING', () => {
+        const { store, flush } = makeStore();
+        const record = new Todo(store);
+        record.set('title', 'doomed');
+        record.saveToStore();
+        const sk = record.get('storeKey');
+
+        store.commitChanges();
+        flush();
+        assert.ok(store.getStatus(sk) & COMMITTING);
+
+        store.sourceDidNotCreate([sk], true);
+        assert.equal(store.getStatus(sk) & NEW, 0);
+        assert.equal(store.getStatus(sk) & COMMITTING, 0);
+    });
+});
+
+describe('Store: discarding and reverting changes', () => {
+    test('discardChanges reverts every dirty record to its committed value', () => {
+        const { store, flush } = makeStore();
+        const [sk] = seedRecords(store, Todo, [{ id: 't1', title: 'orig' }]);
+        store.getRecord(ACCOUNT_ID, Todo, 't1').set('title', 'edited');
+        assert.ok(store.getStatus(sk) & DIRTY);
+
+        store.discardChanges();
+        flush();
+        assert.equal(store.getData(sk).title, 'orig');
+        assert.equal(store.getStatus(sk) & DIRTY, 0);
+    });
+
+    test('destroying an uncommitted NEW record needs no server commit', () => {
+        const { store, source, flush } = makeStore();
+        const record = new Todo(store);
+        record.set('title', 'temp');
+        record.saveToStore();
+        const sk = record.get('storeKey');
+        assert.ok(store.getStatus(sk) & NEW);
+
+        record.destroy();
+        flush();
+        // It never reached the server, so it is simply dropped (EMPTY), not
+        // queued for a destroy commit.
+        assert.equal(store.getStatus(sk), EMPTY);
+        assert.equal(source.callsTo('commitChanges').length, 0);
+    });
+});
+
+describe('Store: commit confirmation and server-driven updates', () => {
+    test('sourceDidCommitUpdate returns the record to a clean READY state', () => {
+        const { store, flush } = makeStore();
+        const [sk] = seedRecords(store, Todo, [{ id: 't1', title: 'orig' }]);
+        store.getRecord(ACCOUNT_ID, Todo, 't1').set('title', 'new');
+
+        store.commitChanges();
+        flush();
+        assert.ok(store.getStatus(sk) & COMMITTING);
+
+        store.sourceDidCommitUpdate([sk]);
+        assert.ok(store.getStatus(sk) & READY);
+        assert.equal(store.getStatus(sk) & DIRTY, 0);
+        assert.equal(store.getStatus(sk) & COMMITTING, 0);
+    });
+
+    test('a non-dirty (server-driven) updateData does not mark the record DIRTY', () => {
+        const { store } = makeStore();
+        const [sk] = seedRecords(store, Todo, [{ id: 't1', title: 'orig' }]);
+        store.updateData(sk, { title: 'from-server' }, false);
+        assert.equal(store.getData(sk).title, 'from-server');
+        assert.equal(store.getStatus(sk) & DIRTY, 0);
+    });
+});
+
+describe('Store: unloading records', () => {
+    test('a clean record may be unloaded, a dirty one may not', () => {
+        const { store } = makeStore();
+        const [sk] = seedRecords(store, Todo, [{ id: 't1', title: 'orig' }]);
+        assert.equal(store.mayUnloadRecord(sk), true);
+
+        store.getRecord(ACCOUNT_ID, Todo, 't1').set('title', 'dirty');
+        assert.equal(store.mayUnloadRecord(sk), false);
     });
 });

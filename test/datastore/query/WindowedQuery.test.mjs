@@ -149,6 +149,136 @@ describe('WindowedQuery: preemptive (client) updates', () => {
         assert.ok(!ids.includes('id7'));
         assert.equal(wq.query._preemptiveUpdates.length, 0);
     });
+
+    test('a confirmed client add survives without duplicating', () => {
+        const wq = makeWindowedQuery({ windowSize: 30 });
+        wq.ids(range(0, 5), 0, 'qs1', 5);
+
+        wq.clientAdd([{ index: 2, id: 'idNew' }]);
+        assert.deepEqual(wq.idsAt(wq.query.getStoreKeys()), [
+            'id0',
+            'id1',
+            'idNew',
+            'id2',
+            'id3',
+            'id4',
+        ]);
+
+        wq.commitRoundTrip();
+        wq.sourceUpdate(
+            'qs1',
+            'qs2',
+            [],
+            [{ index: 2, id: 'idNew' }],
+            6,
+            'id4',
+        );
+        const list = wq.query.getStoreKeys();
+        assert.equal(firstDuplicate(list), null);
+        assert.equal(wq.query.get('length'), 6);
+        assert.equal(wq.query._preemptiveUpdates.length, 0);
+        assert.equal(wq.idsAt([list[2]])[0], 'idNew');
+    });
+});
+
+describe('WindowedQuery: upToId truncation', () => {
+    test('an update truncates the list beyond upToId', () => {
+        const wq = makeWindowedQuery({ windowSize: 30 });
+        wq.ids(range(0, 10), 0, 'qs1', 10);
+        // Updates only cover the list up to id4; anything after is discarded.
+        wq.sourceUpdate('qs1', 'qs2', [], [], 10, 'id4');
+        const list = wq.query.getStoreKeys();
+        assert.equal(list.length, 5, 'array truncated to upToId');
+        assert.deepEqual(wq.idsAt(list), ['id0', 'id1', 'id2', 'id3', 'id4']);
+        // The server-reported total is preserved as the length.
+        assert.equal(wq.query.get('length'), 10);
+    });
+
+    test('an unfindable upToId forces a full reset', () => {
+        const wq = makeWindowedQuery({ windowSize: 30 });
+        wq.ids(range(0, 10), 0, 'qs1', 10);
+        wq.sourceUpdate('qs1', 'qs2', [], [], 10, 'idNotPresent');
+        assert.equal(wq.query.get('length'), null, 'length reset');
+        assert.equal(wq.query.get('queryState'), '', 'query state cleared');
+        assert.equal(wq.query.getStoreKeys().length, 0, 'list emptied');
+    });
+});
+
+describe('WindowedQuery: windows and ranges', () => {
+    test('allIdsAreLoaded reflects whether every window is present', () => {
+        const wq = makeWindowedQuery({ windowSize: 30 });
+        wq.ids(range(0, 30), 0, 'qs1', 35);
+        // The (partial) second window has not been fetched yet.
+        assert.equal(wq.query.get('allIdsAreLoaded'), false);
+
+        wq.ids(range(30, 5), 30, 'qs1', 35);
+        assert.equal(wq.query.get('allIdsAreLoaded'), true);
+        assert.equal(wq.query.checkIfWindowIsFetched(1), true);
+    });
+
+    test('getStoreKeysForObjectsInRange calls back synchronously when loaded', () => {
+        const wq = makeWindowedQuery({ windowSize: 30 });
+        wq.ids(range(0, 10), 0, 'qs1', 10);
+        let result = null;
+        const isIncomplete = wq.query.getStoreKeysForObjectsInRange(
+            2,
+            5,
+            (storeKeys, start, end) => {
+                result = { ids: wq.idsAt(storeKeys), start, end };
+            },
+        );
+        assert.equal(isIncomplete, false);
+        assert.deepEqual(result, {
+            ids: ['id2', 'id3', 'id4'],
+            start: 2,
+            end: 5,
+        });
+    });
+});
+
+describe('WindowedQuery: update idempotency and gaps', () => {
+    test('a remove+add of the same id is treated as a move, not a duplicate', () => {
+        const wq = makeWindowedQuery({ windowSize: 30 });
+        wq.ids(range(0, 5), 0, 'qs1', 5);
+        wq.sourceUpdate(
+            'qs1',
+            'qs2',
+            ['id1'],
+            [{ index: 3, id: 'id1' }],
+            5,
+            'id4',
+        );
+        const list = wq.query.getStoreKeys();
+        assert.equal(firstDuplicate(list), null);
+        assert.equal(wq.query.get('length'), 5);
+        assert.deepEqual(wq.idsAt(list), ['id0', 'id2', 'id3', 'id1', 'id4']);
+    });
+
+    test('removing a known id alongside an unknown id removes only the known one', () => {
+        const wq = makeWindowedQuery({ windowSize: 30 });
+        wq.ids(range(0, 5), 0, 'qs1', 5);
+        wq.sourceUpdate('qs1', 'qs2', ['idUnknown', 'id3'], [], 4, 'id4');
+        const list = wq.query.getStoreKeys();
+        assert.equal(firstDuplicate(list), null);
+        const ids = wq.idsAt(list);
+        assert.ok(!ids.includes('id3'));
+        assert.equal(wq.query.get('length'), 4);
+    });
+
+    test('an already-applied update (matching the current state) is a no-op', () => {
+        const wq = makeWindowedQuery({ windowSize: 30 });
+        wq.ids(range(0, 5), 0, 'qs1', 5);
+        // newQueryState already equals the query's state, so nothing changes.
+        wq.sourceUpdate('qsPrev', 'qs1', ['id0'], [], 4, 'id4');
+        assert.deepEqual(wq.idsAt(wq.query.getStoreKeys()), [
+            'id0',
+            'id1',
+            'id2',
+            'id3',
+            'id4',
+        ]);
+        assert.equal(wq.query.get('length'), 5);
+    });
 });
 
 describe('WindowedQuery: Sentry 7380278134 regression', () => {
