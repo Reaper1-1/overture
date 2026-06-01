@@ -978,8 +978,15 @@ const WindowedQuery = Class({
         if (queryState === update.newQueryState) {
             if (preemptivesLength && !(status & DIRTY)) {
                 const allPreemptives = preemptives.reduce(composeUpdates);
-                this._applyUpdate(invertUpdate(allPreemptives));
+                // Clear the preemptives *before* applying the inverse: that
+                // _applyUpdate drains any waiting id packets at its tail, and
+                // those reads of _preemptiveUpdates must see the post-unwind
+                // (empty) state, not the preemptives we're in the middle of
+                // reverting. Otherwise a deferred packet gets shifted by a
+                // preemptive that has already been removed from the list,
+                // duplicating a run of store keys.
                 preemptives.length = 0;
+                this._applyUpdate(invertUpdate(allPreemptives));
             }
             return this;
         }
@@ -1165,8 +1172,15 @@ const WindowedQuery = Class({
                 // preemptive updates left. If we do, remove them.
                 if (!(status & DIRTY) && preemptives.length) {
                     allPreemptives = preemptives.reduce(composeUpdates);
-                    this._applyUpdate(invertUpdate(allPreemptives));
+                    // Clear the preemptives *before* applying the inverse: that
+                    // _applyUpdate drains any waiting id packets at its tail,
+                    // and those reads of _preemptiveUpdates must see the
+                    // post-unwind (empty) state, not the preemptives we're in
+                    // the middle of reverting. Otherwise a deferred packet gets
+                    // shifted by a preemptive that has already been removed from
+                    // the list, duplicating a run of store keys.
                     preemptives.length = 0;
+                    this._applyUpdate(invertUpdate(allPreemptives));
                 } else {
                     this._applyWaitingPackets();
                 }
@@ -1280,8 +1294,12 @@ const WindowedQuery = Class({
             } else {
                 // The preemptive change we made was clearly incorrect as no
                 // change has actually occurred, so we need to unwind it.
-                this._applyUpdate(invertUpdate(allPreemptives));
+                // Clear the preemptives *before* applying the inverse: that
+                // _applyUpdate drains any waiting id packets at its tail, and
+                // those reads of _preemptiveUpdates must see the post-unwind
+                // (empty) state.
                 preemptives.length = 0;
+                this._applyUpdate(invertUpdate(allPreemptives));
             }
         }
 
