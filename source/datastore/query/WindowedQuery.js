@@ -369,6 +369,19 @@ const WindowedQuery = Class({
     */
 
     /**
+        Property: O.WindowedQuery#hasPreemptives
+        Type: Boolean
+
+        Do we have pre-emptive updates applied to the query?
+        This is *not* observable.
+    */
+    hasPreemptives: function () {
+        return !!this._preemptiveUpdates.length;
+    }
+        .property()
+        .nocache(),
+
+    /**
         Property: O.WindowedQuery#allIdsAreLoaded
         Type: Boolean
 
