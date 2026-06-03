@@ -1,5 +1,6 @@
 import { Class, isEqual } from '../../core/Core.js';
 import { getRawBoundingClientRect } from '../../dom/Element.js';
+import { queueFn } from '../../foundation/RunLoop.js';
 import { getViewFromNode } from '../activeViews.js';
 import { ButtonView } from '../controls/ButtonView.js';
 import { FileButtonView } from '../controls/FileButtonView.js';
@@ -168,15 +169,6 @@ const MenuButtonView = Class({
         layer.setAttribute('aria-expanded', this.get('isActive') + '');
     },
 
-    focusAfterMenu: function () {
-        const activeElement = document.activeElement;
-        if (!activeElement || activeElement === document.body) {
-            this.focus();
-        }
-    }
-        .queue('after')
-        .on('focusAfterMenu'),
-
     // --- Activate ---
 
     /**
@@ -191,7 +183,7 @@ const MenuButtonView = Class({
                 !!event && !!event.type && event.type.startsWith('key');
             this.set('isActive', true);
             const buttonView = this;
-            const wasFocused = this.get('isFocused');
+            const wasFocused = document.activeElement;
             const menuView = this.get('menuView');
             this.set('menuViewId', menuView.get('id'));
             let popOverView;
@@ -204,7 +196,16 @@ const MenuButtonView = Class({
                     onHide() {
                         buttonView.set('isActive', false);
                         if (wasFocused) {
-                            buttonView.fire('focusAfterMenu');
+                            queueFn('after', () => {
+                                if (
+                                    wasFocused.isConnected &&
+                                    document.activeElement === document.body
+                                ) {
+                                    wasFocused.focus({
+                                        preventScroll: true,
+                                    });
+                                }
+                            });
                         }
                         if (menuOptionView) {
                             menuOptionView
