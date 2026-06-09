@@ -207,7 +207,7 @@ const getChanged = function (Type, a, b) {
     const clientSettable = Record.getClientSettableAttributes(Type);
     let hasChanges = false;
     for (const key in a) {
-        if (clientSettable[key] && !isEqual(a[key], b[key])) {
+        if (clientSettable.has(key) && !isEqual(a[key], b[key])) {
             changed[key] = true;
             hasChanges = true;
         }
@@ -818,9 +818,10 @@ const Store = Class({
                 );
                 create.changes.push(changed);
             } else {
+                const clientSettable = Record.getClientSettableAttributes(Type);
                 data = filterObject(
                     convertForeignKeysToId(this, Type, data),
-                    Record.getClientSettableAttributes(Type),
+                    (x) => clientSettable.has(x),
                 );
                 create = entry.create;
             }
@@ -832,9 +833,9 @@ const Store = Class({
         for (const [storeKey, changedRaw] of _skToChanged) {
             const status = _skToStatus.get(storeKey);
             const Type = _skToType.get(storeKey);
-            const changed = filterObject(
-                changedRaw,
-                Record.getClientSettableAttributes(Type),
+            const clientSettable = Record.getClientSettableAttributes(Type);
+            const changed = filterObject(changedRaw, (x) =>
+                clientSettable.has(x),
             );
 
             let previous = _skToCommitted.get(storeKey);
@@ -1477,7 +1478,8 @@ const Store = Class({
     undestroyRecord(storeKey, Type, data, _isCopyOfStoreKey) {
         const status = this.getStatus(storeKey);
         if (data) {
-            data = filterObject(data, Record.getClientSettableAttributes(Type));
+            const clientSettable = Record.getClientSettableAttributes(Type);
+            data = filterObject(data, (x) => clientSettable.has(x));
         }
         if (status === EMPTY || status === DESTROYED) {
             this.createRecord(storeKey, data, _isCopyOfStoreKey);

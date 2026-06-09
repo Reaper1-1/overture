@@ -603,13 +603,13 @@ Record.getClientSettableAttributes = function (Type) {
     if (!clientSettableAttributes) {
         const prototype = Type.prototype;
         const attrs = meta(prototype).attrs;
-        clientSettableAttributes = {};
+        clientSettableAttributes = new Set();
         for (const attrKey in attrs) {
             const propKey = attrs[attrKey];
             if (propKey) {
                 const attribute = prototype[propKey];
                 if (!attribute.noSync) {
-                    clientSettableAttributes[attrKey] = true;
+                    clientSettableAttributes.add(attrKey);
                 }
             }
         }

@@ -28,21 +28,21 @@ const keyOf = (object, value) => {
 
     Takes two objects and returns a new object which contains all the
     properties of the first for which the same key has a truthy value in the
-    second.
+    second and the value is not undefined or null.
 
     Parameters:
-        object   - {Object} The object to copy properties from.
-        include  - {Object} The object to check for a truthy key value in
-                   before copying the property.
+        object - {Object} The object to copy properties from.
+        fn     - {Function} The function to test each key/value with.
 
     Returns:
         {Object} The filtered object.
 */
-const filter = (object, include) => {
+const filter = (object, fn) => {
     const result = {};
     for (const key in object) {
-        if (include[key]) {
-            result[key] = object[key];
+        const value = object[key];
+        if (fn(key, value)) {
+            result[key] = value;
         }
     }
     return result;

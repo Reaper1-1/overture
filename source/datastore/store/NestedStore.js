@@ -1,5 +1,5 @@
 import { Class, clone, isEqual } from '../../core/Core.js';
-import { filter } from '../../core/KeyValue.js';
+import { filter as filterObject } from '../../core/KeyValue.js';
 import { queueFn } from '../../foundation/RunLoop.js';
 import {
     COMMITTING, // Request been made to source to commit record.
@@ -135,7 +135,11 @@ const NestedStore = Class({
         }
         for (const [storeKey, changed] of _skToChanged) {
             const data = _skToData.get(storeKey);
-            parent.updateData(storeKey, filter(data, changed), true);
+            parent.updateData(
+                storeKey,
+                filterObject(data, (x) => changed[x]),
+                true,
+            );
         }
         for (const [storeKey, ifCopiedStoreKey] of _destroyed) {
             // Check if already handled by moveFromAccount in create.
