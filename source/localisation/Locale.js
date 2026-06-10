@@ -36,10 +36,7 @@ class Locale {
     constructor(mixin) {
         this.dateFormats = Object.create(this.dateFormats);
         merge(this, mixin);
-        if (
-            typeof Intl !== 'undefined' &&
-            typeof Intl.DisplayNames !== 'undefined'
-        ) {
+        if (typeof Intl.DisplayNames !== 'undefined') {
             const displayNames = new Intl.DisplayNames(this.code, {
                 type: 'region',
             });
@@ -51,6 +48,9 @@ class Locale {
                 return name === isoCode ? '' : name;
             };
         }
+        this._numberFormatter = new Intl.NumberFormat(this.code, {
+            useGrouping: 'always',
+        });
     }
 }
 
@@ -105,14 +105,19 @@ Object.assign(Locale.prototype, {
             {String} The localised number.
     */
     getFormattedInt(number, locale) {
-        let string = number + '';
-        if (string.length > 3) {
-            string = string.replace(
-                /(\d+?)(?=(?:\d{3})+$)/g,
-                '$1' + locale.thousandsSeparator,
-            );
+        const string = number + '';
+        if (string.length <= 3) {
+            return string;
         }
-        return string;
+        // Use Intl to determine where the separators go, but keep the
+        // locale pack's separator characters, which don't always match
+        // CLDR's.
+        return this._numberFormatter
+            .formatToParts(string)
+            .map((part) =>
+                part.type === 'group' ? locale.thousandsSeparator : part.value,
+            )
+            .join('');
     },
 
     /**
