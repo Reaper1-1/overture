@@ -9,7 +9,7 @@ import {
     getPosition,
 } from '../dom/Element.js';
 import { Obj } from '../foundation/Object.js';
-import { queueFn } from '../foundation/RunLoop.js';
+import { didError, queueFn } from '../foundation/RunLoop.js';
 import { activeViews } from './activeViews.js';
 import { ViewEventsController } from './ViewEventsController.js';
 
@@ -30,6 +30,30 @@ const POSITION_CONTAINED_BY = 0x10;
 const POINTER_DOWN = 'pointerdown';
 const POINTER_UP = 'pointerup';
 const POINTER_MOVE = 'pointermove';
+
+// Report (but don't throw) if a view is removed from its parent while the
+// willEnterDocument traversal is still inside its subtree: this nulls the
+// parentView chain for descendants that have not been visited yet, so their
+// getParent( Type ) lookups will return null and typically crash. The removal
+// is almost always triggered by an observer firing from resume()/redraw() in
+// a descendant's willEnterDocument. The report gives us the offending call
+// stack; the crash it later causes does not.
+const assertNotEnteringDocument = (view, parent) => {
+    if (view._isEnteringDocument) {
+        didError(
+            new Error(
+                'View removed while entering document: ' +
+                    view.constructor.name +
+                    '#' +
+                    view.get('id') +
+                    ' from ' +
+                    parent.constructor.name +
+                    '#' +
+                    parent.get('id'),
+            ),
+        );
+    }
+};
 
 /**
     Class: O.View
@@ -217,6 +241,7 @@ const View = Class({
     init: function (/* ...mixins */) {
         this._suspendRedraw = false;
         this._needsRedraw = null;
+        this._isEnteringDocument = false;
 
         this.parentView = null;
         this.isRendered = false;
@@ -388,6 +413,12 @@ const View = Class({
             {O.View} Returns self.
     */
     willEnterDocument() {
+        // While true, removing this view from its parent is a bug: the
+        // enter traversal is still inside this subtree, and nulling our
+        // parentView would break getParent() for descendants that have not
+        // been visited yet. See assertNotEnteringDocument.
+        this._isEnteringDocument = true;
+
         if (this.get('syncOnlyInDocument')) {
             this.resume();
         }
@@ -402,6 +433,8 @@ const View = Class({
         for (let i = 0; i < childViews.length; i += 1) {
             childViews[i].willEnterDocument();
         }
+
+        this._isEnteringDocument = false;
 
         return this;
     },
@@ -1086,6 +1119,8 @@ const View = Class({
             return this;
         }
 
+        assertNotEnteringDocument(oldView, this);
+
         if (oldParent) {
             oldParent.removeView(view);
         }
@@ -1133,6 +1168,8 @@ const View = Class({
         if (i === -1) {
             return this;
         }
+
+        assertNotEnteringDocument(view, this);
 
         if (this.get('isRendered')) {
             const isInDocument = this.get('isInDocument');
