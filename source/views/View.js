@@ -1113,7 +1113,7 @@ const View = Class({
             return this.insertView(view);
         }
         const children = this.get('childViews');
-        const i = children.indexOf(oldView);
+        let i = children.indexOf(oldView);
         const oldParent = view.get('parentView');
         if (i === -1) {
             return this;
@@ -1123,6 +1123,17 @@ const View = Class({
 
         if (oldParent) {
             oldParent.removeView(view);
+            // If view was already a child of this view, that removeView
+            // just spliced this same childViews array, shifting oldView's
+            // index; writing to the stale slot would leave oldView in
+            // childViews with a nulled parentView — a subtree the enter
+            // traversal can still reach but getParent() cannot escape.
+            // Observers fired by the removal may even have removed oldView
+            // itself, in which case there is nothing left to replace.
+            i = children.indexOf(oldView);
+            if (i === -1) {
+                return this.insertView(view);
+            }
         }
         view.set('parentView', this);
         children.setObjectAt(i, view);
@@ -1144,6 +1155,26 @@ const View = Class({
             }
         }
 
+        // oldView must be fully out of childViews before we null its
+        // parentView: a lingering entry (e.g. a duplicate, from a
+        // childViews array shared between constructors or a reentrant
+        // mutation) would be reachable by the enter traversal but broken
+        // for getParent(). Report so we get the producer's stack, not the
+        // victim's.
+        if (children.indexOf(oldView) !== -1) {
+            didError(
+                new Error(
+                    'View still in childViews after replaceView: ' +
+                        oldView.constructor.name +
+                        '#' +
+                        oldView.get('id') +
+                        ' in ' +
+                        this.constructor.name +
+                        '#' +
+                        this.get('id'),
+                ),
+            );
+        }
         oldView.set('parentView', null);
         this.propertyDidChange('childViews');
         return this;
