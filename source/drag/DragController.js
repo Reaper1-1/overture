@@ -1,11 +1,16 @@
-/*global document */
+/*global document, window */
 
 import { setDragController } from '../_codependent/_DragController.js';
 import { lookupKey } from '../dom/DOMEvent.js';
 import { Obj } from '../foundation/Object.js';
 import { browser } from '../ua/UA.js';
 import { getViewFromNode } from '../views/activeViews.js';
-import { POINTER_DOWN, POINTER_MOVE, POINTER_UP } from '../views/View.js';
+import {
+    POINTER_CANCEL,
+    POINTER_DOWN,
+    POINTER_MOVE,
+    POINTER_UP,
+} from '../views/View.js';
 import { ViewEventsController } from '../views/ViewEventsController.js';
 import { Drag } from './Drag.js';
 import { ALL, DEFAULT, effectToString } from './DragEffect.js';
@@ -334,6 +339,38 @@ const DragController = new Obj({
         }
     }.on(POINTER_UP),
 
+    /**
+        Method (private): O.DragController._onMousecancel
+
+        A non-native drag is normally ended by the pointerup event (see
+        <O.DragController._onMouseup>). However, if we lose the pointer before
+        that — the browser cancels it (pointercancel), or the whole window
+        loses focus (blur), e.g. because the user dragged out of the window and
+        released the button outside it — then that pointerup never arrives.
+        Left alone, the drag keeps running indefinitely; in particular its
+        auto-scroll timer keeps firing dragMoved against state that has since
+        moved on, which has thrown TypeErrors. So treat a lost pointer as a
+        cancel.
+
+        Native drags manage their own lifecycle via drop/dragend/dragleave, and
+        touch drags via touch{end,cancel}, so we only handle mouse/pen pointer
+        drags here.
+
+        Parameters:
+            event - {Event} The blur or pointercancel event.
+    */
+    _onMousecancel: function (event) {
+        // Element blur events also reach us through the view event system;
+        // only a blur of the window itself means we've lost focus.
+        if (event.type === 'blur' && event.target !== window) {
+            return;
+        }
+        const drag = this.drag;
+        if (drag && !drag.get('isNative') && this._touchId === null) {
+            drag.set('isCanceled', true).endDrag();
+        }
+    }.on('blur', POINTER_CANCEL),
+
     _onClick: function (event) {
         if (this._ignoreClick) {
             event.preventDefault();
@@ -638,6 +675,12 @@ const DragController = new Obj({
 ['dragover', 'dragenter', 'dragleave', 'drop', 'dragend'].forEach((type) => {
     document.addEventListener(type, DragController, false);
 });
+
+// pointercancel isn't routed through the view event system, and window blur
+// doesn't bubble to a view at all, so listen for these directly to catch a
+// pointer being lost mid-drag (see O.DragController._onMousecancel).
+document.addEventListener(POINTER_CANCEL, DragController, false);
+window.addEventListener('blur', DragController, false);
 
 ViewEventsController.addEventTarget(DragController, 20);
 

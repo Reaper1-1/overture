@@ -30,6 +30,7 @@ const POSITION_CONTAINED_BY = 0x10;
 const POINTER_DOWN = 'pointerdown';
 const POINTER_UP = 'pointerup';
 const POINTER_MOVE = 'pointermove';
+const POINTER_CANCEL = 'pointercancel';
 
 // Report (but don't throw) if a view is removed from its parent while the
 // willEnterDocument traversal is still inside its subtree: this nulls the
@@ -1411,4 +1412,5 @@ export {
     POINTER_DOWN,
     POINTER_UP,
     POINTER_MOVE,
+    POINTER_CANCEL,
 };
