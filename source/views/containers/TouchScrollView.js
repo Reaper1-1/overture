@@ -25,6 +25,10 @@ const getTouch = function (touches, id) {
     return null;
 };
 
+const WAIT = 0;
+const DO_SCROLL = 1;
+const NO_SCROLL = 2;
+
 class TouchScrollAnimator extends Animation {
     constructor(props) {
         super();
@@ -62,6 +66,8 @@ class TouchScrollAnimator extends Animation {
 
         this.mayScrollX = false;
         this.mayScrollY = true;
+
+        this.lockScrollDirection = true;
 
         this.currentX = 0;
         this.currentY = 0;
@@ -118,15 +124,37 @@ class TouchScrollAnimator extends Animation {
     shouldStartScroll(x, y) {
         const moveX = Math.abs(x - this._initialTouchX);
         const moveY = Math.abs(y - this._initialTouchY);
-        let isDragging = false;
 
-        if (moveX >= 5 || moveY >= 5) {
-            isDragging = this._enableScrollX = this.mayScrollX && moveX >= 3;
-            isDragging =
-                (this._enableScrollY = this.mayScrollY && moveY >= 3) ||
-                isDragging;
+        // Wait until we're clearly out of the initial dead zone before we
+        // commit to scrolling, so the direction is meaningful.
+        if (moveX < 5 && moveY < 5) {
+            return WAIT;
         }
-        return isDragging;
+
+        if (this.lockScrollDirection) {
+            // Lock the gesture to a single axis, chosen from the dominant
+            // direction of the finger movement *regardless* of whether this
+            // view can actually scroll that way. This matters when the view
+            // only handles one axis but is nested inside a scroll view that
+            // handles the other itself (e.g. a horizontally-panning
+            // PanZoomView inside a natively vertically-scrolling parent): a
+            // mostly-vertical drag then stays locked to the vertical axis
+            // (which this view leaves alone) instead of being hijacked into a
+            // horizontal pan because the finger drifted sideways a few pixels.
+            if (moveX > moveY) {
+                this._enableScrollX = this.mayScrollX;
+                this._enableScrollY = false;
+            } else {
+                this._enableScrollX = false;
+                this._enableScrollY = this.mayScrollY;
+            }
+        } else {
+            this._enableScrollX = moveX >= 3 && this.mayScrollX;
+            this._enableScrollY = moveY >= 3 && this.mayScrollY;
+        }
+        return this._enableScrollX || this._enableScrollY
+            ? DO_SCROLL
+            : NO_SCROLL;
     }
 
     getSnapPoint(/* x, y */) {
@@ -380,9 +408,18 @@ mixin(TouchScrollAnimator.prototype, {
             this._times.push(timeStamp);
         }
         // Otherwise figure out whether we are switching into dragging mode now.
-        else if (this.shouldStartScroll(currentTouchX, currentTouchY)) {
-            this._isDragging = true;
-            ViewEventsController.addEventTarget(this, 100);
+        else {
+            const willScroll = this.shouldStartScroll(
+                currentTouchX,
+                currentTouchY,
+            );
+            if (willScroll === DO_SCROLL) {
+                this._isDragging = true;
+                ViewEventsController.addEventTarget(this, 100);
+            }
+            if (willScroll === NO_SCROLL) {
+                this._trackingId = null;
+            }
         }
 
         // Update last touch positions and time stamp for next event
@@ -471,6 +508,11 @@ const TouchScrollView = Class({
 
     showScrollbarX: false,
     showScrollbarY: true,
+
+    // Whether a gesture locks to a single scroll axis (see the animator's
+    // shouldStartScroll). Turn off for views that want to scroll both axes at
+    // once.
+    lockScrollDirection: true,
 
     init: function () {
         this.allowDefaultTouch = false;
@@ -565,6 +607,7 @@ const TouchScrollView = Class({
             object: this,
             mayScrollX: this.get('showScrollbarX'),
             mayScrollY: this.get('showScrollbarY'),
+            lockScrollDirection: this.get('lockScrollDirection'),
             syncDimensions() {
                 const view = this.object;
                 this.currentX = view.get('scrollLeft');
