@@ -399,6 +399,8 @@ const WindowedQuery = Class({
 
         this._isAnExplicitIdFetch = false;
 
+        this.hasTotal = false;
+
         this.log = [];
 
         WindowedQuery.parent.constructor.apply(this, arguments);
@@ -411,6 +413,8 @@ const WindowedQuery = Class({
         this._preemptiveUpdates.length = 0;
 
         this._isAnExplicitIdFetch = false;
+
+        this.set('hasTotal', false);
 
         this.log.push(['reset']);
 
@@ -1242,16 +1246,31 @@ const WindowedQuery = Class({
             } else {
                 list.length = windows.length = preemptives.length = 0;
                 informAllRangeObservers = true;
-                // The cached length/hasTotal came from a different
-                // queryState, and Adapter#didQuery already used them to
-                // back-fill args.total. Re-derive total from this slice
-                // alone (with +1 so the next window past the slice still
-                // gets fetched, in case there is more), and mark hasTotal
-                // as unknown so the next packet recomputes instead of
-                // resurrecting the stale length.
-                total = position + length + 1;
-                this.set('hasTotal', false);
+                // If we don't have the new total, make it 1 past the last
+                // known index so the next window past the slice still
+                // gets fetched, in case there are more ids, and mark hasTotal
+                // as unknown so the next packet asks for the total again.
+                if (total === undefined) {
+                    total = position + length + 1;
+                    this.set('hasTotal', false);
+                } else {
+                    this.set('hasTotal', true);
+                }
             }
+        } else if (!this.get('hasTotal')) {
+            let hasTotal = true;
+            if (total === undefined) {
+                const numIds = ids.length;
+                const limit = args.limit;
+                total = position + numIds;
+                if (typeof limit !== 'number' || numIds >= args.limit) {
+                    hasTotal = false;
+                    total += 1;
+                }
+            }
+            this.set('hasTotal', hasTotal);
+        } else if (total === undefined) {
+            total = oldLength;
         }
         this.set('queryState', args.queryState || '');
 
