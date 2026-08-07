@@ -1,8 +1,16 @@
 import { Class, isDestroyed } from '../core/Core.js';
+import { limit } from '../core/Math.js';
 import { Obj } from '../foundation/Object.js';
 
 /* { observes, property, nocache } from */
 import '../foundation/Decorators.js';
+
+// ---
+
+const adjustIndex = (index, event) =>
+    index +
+    event.addedIndexes.binarySearch(index) -
+    event.removedIndexes.binarySearch(index);
 
 const SelectionController = Class({
     Name: 'SelectionController',
@@ -14,8 +22,13 @@ const SelectionController = Class({
 
     init: function (/* ...mixins */) {
         this._selectionId = 0;
-        this._lastSelectedIndex = 0;
         this._selectedStoreKeys = new Set();
+
+        // Keep store key of the last selected item that wasn't selected by a
+        // an "extend" action
+        this._anchorIndex = -1;
+        // Store key of last item we toggled selection for
+        this._cursorIndex = 0;
 
         this.isLoadingSelection = false;
         this.length = 0;
@@ -48,12 +61,12 @@ const SelectionController = Class({
     }.observes('content'),
 
     visibleDidChange: function () {
-        this._lastSelectedIndex = 0;
+        this._anchorIndex = -1;
+        this._cursorIndex = 0;
     }.observes('visible'),
 
     contentWasUpdated(event) {
-        // If an id has been removed, it may no
-        // longer belong to the selection
+        // If an id has been removed, it may no longer belong to the selection
         const _selectedStoreKeys = this._selectedStoreKeys;
         let length = this.get('length');
         const removed = event.removed;
@@ -67,11 +80,8 @@ const SelectionController = Class({
             }
         }
 
-        const lastSelectedIndex = this._lastSelectedIndex;
-        this._lastSelectedIndex =
-            lastSelectedIndex +
-            event.addedIndexes.binarySearch(lastSelectedIndex) -
-            event.removedIndexes.binarySearch(lastSelectedIndex);
+        this._anchorIndex = adjustIndex(this._anchorIndex, event);
+        this._cursorIndex = adjustIndex(this._cursorIndex, event);
 
         this.set('length', length).propertyDidChange('selectedStoreKeys');
     },
@@ -92,6 +102,42 @@ const SelectionController = Class({
         return this.get('selectedStoreKeys').map((storeKey) =>
             store.getRecordFromStoreKey(storeKey),
         );
+    },
+
+    // The index of the first and last selected task in the current view,
+    // plus whether everything between the two is selected as well:
+    // [first, last, isContiguous], or null if nothing is selected.
+    getBounds() {
+        if (!this.get('length')) {
+            return null;
+        }
+        const query = this.get('visible') || this.get('content');
+        const _selectedStoreKeys = this._selectedStoreKeys;
+        let first = -1;
+        let last = -1;
+        let isContiguous = true;
+        if (_selectedStoreKeys.size < 16) {
+            const indexes = [..._selectedStoreKeys]
+                .map((storeKey) => query.indexOfStoreKey(storeKey))
+                .sort((a, b) => a - b);
+            const lastIndex = indexes.length - 1;
+            first = indexes[0];
+            last = indexes[lastIndex];
+            isContiguous = last - first === lastIndex;
+        } else {
+            for (let i = 0, l = query.get('length'); i < l; i += 1) {
+                const item = query.getObjectAt(i);
+                if (item && _selectedStoreKeys.has(item.get('storeKey'))) {
+                    if (first === -1) {
+                        first = i;
+                    } else if (i !== last + 1) {
+                        isContiguous = false;
+                    }
+                    last = i;
+                }
+            }
+        }
+        return first === -1 ? null : [first, last, isContiguous];
     },
 
     // ---
@@ -142,15 +188,18 @@ const SelectionController = Class({
     },
 
     selectIndex(index, isSelected, includeRangeFromLastSelected) {
-        const lastSelectedIndex = this._lastSelectedIndex;
+        const cursorIndex = this._cursorIndex;
         const start = includeRangeFromLastSelected
-            ? Math.min(index, lastSelectedIndex)
+            ? Math.min(index, cursorIndex)
             : index;
         const end =
             (includeRangeFromLastSelected
-                ? Math.max(index, lastSelectedIndex)
+                ? Math.max(index, cursorIndex)
                 : index) + 1;
-        this._lastSelectedIndex = index;
+        this._cursorIndex = index;
+        if (isSelected) {
+            this._anchorIndex = index;
+        }
         return this.selectRange(start, end, isSelected);
     },
 
@@ -190,7 +239,7 @@ const SelectionController = Class({
             focusedIndex > -1 &&
             !this.get('length')
         ) {
-            this._lastSelectedIndex = focusedIndex;
+            this._cursorIndex = focusedIndex;
         }
 
         return this.selectIndex(
@@ -217,7 +266,8 @@ const SelectionController = Class({
     },
 
     selectNone() {
-        this._lastSelectedIndex = 0;
+        this._anchorIndex = -1;
+        this._cursorIndex = 0;
         this._selectedStoreKeys = new Set();
         this.set('length', 0)
             .propertyDidChange('selectedStoreKeys')
@@ -225,6 +275,100 @@ const SelectionController = Class({
             .setHasSelection();
 
         return this;
+    },
+
+    // ---
+
+    selectOne(delta) {
+        const query = this.get('visible') || this.get('content');
+        const length = query.get('length');
+        if (!length) {
+            return;
+        }
+        const indexes = this.getBounds();
+        let index = 0;
+        if (!indexes) {
+            // With nothing selected, start from the near end of the list.
+            index = delta > 0 ? 0 : length - 1;
+        } else {
+            // Otherwise, we select the first item before the selection if going
+            // up and the first item below the selection if going down, clamped
+            // to the query range
+            const [first, last] = indexes;
+            index = limit((delta > 0 ? last : first) + delta, 0, length - 1);
+        }
+        this.selectNone().selectIndex(index, true, false);
+    },
+
+    selectUp() {
+        this.selectOne(-1);
+    },
+
+    selectDown() {
+        this.selectOne(1);
+    },
+
+    // ---
+
+    extendSelectionUp() {
+        if (!this.get('length')) {
+            this.selectUp();
+        } else {
+            this.extendSelection(this._cursorIndex - 1);
+        }
+    },
+
+    extendSelectionDown() {
+        if (!this.get('length')) {
+            this.selectDown();
+        } else {
+            this.extendSelection(this._cursorIndex + 1);
+        }
+    },
+
+    extendSelection(toIndex) {
+        if (!this.get('length')) {
+            this.selectIndex(toIndex, true);
+            return;
+        }
+        const anchorIndex = this._anchorIndex;
+        const cursorIndex = this._cursorIndex;
+        if (
+            Math.abs(anchorIndex - toIndex) <
+            Math.abs(anchorIndex - cursorIndex)
+        ) {
+            // Moving towards anchor, deselect
+            if (cursorIndex < anchorIndex) {
+                this.selectRange(cursorIndex, toIndex, false);
+            } else {
+                this.selectRange(toIndex + 1, cursorIndex + 1, false);
+            }
+        } else {
+            const query = this.get('visible') || this.get('content');
+            const storeKeys = query.getStoreKeys();
+            // Moving away from anchor, select
+            if (toIndex < anchorIndex) {
+                // Find the next unselected in this direction
+                while (
+                    toIndex > 0 &&
+                    this.isStoreKeySelected(storeKeys[toIndex])
+                ) {
+                    toIndex -= 1;
+                }
+                this.selectRange(toIndex, anchorIndex, true);
+            } else {
+                // Find the next unselected in this direction
+                const maxIndex = query.get('length') - 1;
+                while (
+                    toIndex < maxIndex &&
+                    this.isStoreKeySelected(storeKeys[toIndex])
+                ) {
+                    toIndex += 1;
+                }
+                this.selectRange(anchorIndex + 1, toIndex + 1, true);
+            }
+        }
+        this._cursorIndex = toIndex;
     },
 });
 
