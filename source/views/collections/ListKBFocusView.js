@@ -1,5 +1,4 @@
 import { Class } from '../../core/Core.js';
-import { limit } from '../../core/Math.js';
 import { bind } from '../../foundation/Binding.js';
 import { ScrollView } from '../containers/ScrollView.js';
 import { View } from '../View.js';
@@ -144,30 +143,11 @@ const ListKBFocusView = Class({
         }
     },
 
-    go(delta) {
-        const index = this.get('index');
-        const singleSelection = this.get('singleSelection');
-        const list = singleSelection.get('content');
-        const length = (list && list.get('length')) || 0;
-        if (
-            delta === 1 &&
-            index > -1 &&
-            list &&
-            list.getObjectAt(index) !== this.get('record')
-        ) {
-            delta = 0;
-        }
-        if (delta) {
-            singleSelection.set('index', limit(index + delta, 0, length - 1));
-        } else {
-            singleSelection.propertyDidChange('index');
-        }
-    },
     goNext() {
-        this.go(1);
+        this.get('singleSelection').moveSelection(1);
     },
     goPrev() {
-        this.go(-1);
+        this.get('singleSelection').moveSelection(-1);
     },
     select(event) {
         const index = this.get('index');

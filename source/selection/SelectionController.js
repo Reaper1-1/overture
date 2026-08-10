@@ -30,6 +30,7 @@ const SelectionController = Class({
         // Store key of last item we toggled selection for
         this._cursorIndex = 0;
 
+        this.focused = null;
         this.isLoadingSelection = false;
         this.length = 0;
         this.hasSelection = false;
@@ -200,6 +201,7 @@ const SelectionController = Class({
         if (isSelected) {
             this._anchorIndex = index;
         }
+        this.focused?.set('index', index);
         return this.selectRange(start, end, isSelected);
     },
 
@@ -297,7 +299,14 @@ const SelectionController = Class({
             const [first, last] = indexes;
             index = limit((delta > 0 ? last : first) + delta, 0, length - 1);
         }
-        this.selectNone().selectIndex(index, true, false);
+        this.selectNone();
+        if (!this.focused) {
+            this.selectIndex(index, true, false);
+        } else if (indexes) {
+            this.focused.set('index', index);
+        } else {
+            this.focused.moveSelection(delta);
+        }
     },
 
     selectUp() {
@@ -311,6 +320,12 @@ const SelectionController = Class({
     // ---
 
     extendSelectionUp() {
+        if (this.focused && !this.get('length')) {
+            const index = this.focused.get('index');
+            if (index > -1) {
+                this.selectIndex(index, true, false);
+            }
+        }
         if (!this.get('length')) {
             this.selectUp();
         } else {
@@ -319,6 +334,12 @@ const SelectionController = Class({
     },
 
     extendSelectionDown() {
+        if (this.focused && !this.get('length')) {
+            const index = this.focused.get('index');
+            if (index > -1) {
+                this.selectIndex(index, true, false);
+            }
+        }
         if (!this.get('length')) {
             this.selectDown();
         } else {
@@ -368,6 +389,7 @@ const SelectionController = Class({
                 this.selectRange(anchorIndex + 1, toIndex + 1, true);
             }
         }
+        this.focused?.set('index', toIndex);
         this._cursorIndex = toIndex;
     },
 });

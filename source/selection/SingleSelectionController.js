@@ -1,4 +1,5 @@
 import { Class, meta } from '../core/Core.js';
+import { limit } from '../core/Math.js';
 import { READY } from '../datastore/record/Status.js';
 import { Obj } from '../foundation/Object.js';
 import { queueFn } from '../foundation/RunLoop.js';
@@ -267,6 +268,27 @@ const SingleSelectionController = Class({
 
     contentWasReset() {
         this._recordDidChange();
+    },
+
+    // ---
+
+    moveSelection(delta) {
+        const index = this.get('index');
+        const content = this.get('content');
+        const length = (content && content.get('length')) || 0;
+        if (
+            delta === 1 &&
+            index > -1 &&
+            content &&
+            content.getObjectAt(index) !== this.get('record')
+        ) {
+            delta = 0;
+        }
+        if (delta) {
+            this.set('index', limit(index + delta, 0, length - 1));
+        } else {
+            this.propertyDidChange('index');
+        }
     },
 });
 
