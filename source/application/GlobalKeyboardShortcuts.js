@@ -25,6 +25,17 @@ import '../foundation/Decorators.js';
 */
 const allowedInputs = new Set(['checkbox', 'radio', 'file', 'submit']);
 
+const focusIsInInput = (event) => {
+    const target = event.target;
+    const nodeName = target.nodeName;
+    return (
+        nodeName === 'TEXTAREA' ||
+        nodeName === 'SELECT' ||
+        (nodeName === 'INPUT' && !allowedInputs.has(target.type)) ||
+        event.targetView instanceof RichTextView
+    );
+};
+
 /**
  A set of shortcuts which should be applied on (and only on) the 'keydown'
  event. Used by GlobalKeyboardShortcuts#trigger.
@@ -193,17 +204,11 @@ const GlobalKeyboardShortcuts = Class({
             accept - {Function} (optional) A function that returns a Boolean to determine whether the handler should be run for the event.
     */
     trigger: function (event, accept) {
-        const target = event.target;
-        const nodeName = target.nodeName;
         const key = lookupKey(event);
+        const inputIsFocused = focusIsInInput(event);
         const allowedInInput =
             (isApple ? event.metaKey : event.ctrlKey) &&
             (event.altKey || /-(?:.|Enter)$/.test(key));
-        const inputIsFocused =
-            nodeName === 'TEXTAREA' ||
-            nodeName === 'SELECT' ||
-            (nodeName === 'INPUT' && !allowedInputs.has(target.type)) ||
-            event.targetView instanceof RichTextView;
         if (event.type === 'keydown') {
             handleOnDown.add(key);
         } else if (handleOnDown.has(key)) {
@@ -262,6 +267,7 @@ const GlobalKeyboardShortcuts = Class({
 
 export {
     GlobalKeyboardShortcuts,
+    focusIsInInput,
     DEFAULT_IN_INPUT,
     ACTIVE_IN_INPUT,
     DISABLE_IN_INPUT,
