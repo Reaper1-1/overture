@@ -1042,7 +1042,7 @@ const RichTextView = Class({
         this.showOverlay(view, buttonView);
     },
 
-    showOverlay(view, buttonView) {
+    getOverlayOptions(buttonView) {
         const aboveKeyboard =
             this.get('showToolbar') === TOOLBAR_ABOVE_KEYBOARD;
 
@@ -1061,15 +1061,11 @@ const RichTextView = Class({
             buttonView = this;
         }
         const richTextView = this;
-        this.get('popOver').show({
-            view,
+        return {
             positionToThe: aboveKeyboard ? 'top' : 'bottom',
             alignWithView: buttonView,
             atNode,
-            alignEdge:
-                !aboveKeyboard && view instanceof URLPickerView
-                    ? 'left'
-                    : 'centre',
+            alignEdge: 'centre',
             showCallout: true,
             offsetTop: aboveKeyboard ? 0 : 2,
             offsetLeft: aboveKeyboard ? 0 : -4,
@@ -1080,7 +1076,18 @@ const RichTextView = Class({
                     richTextView,
                 );
             },
-        });
+        };
+    },
+
+    showOverlay(view, buttonView) {
+        const options = this.getOverlayOptions(buttonView);
+        const aboveKeyboard =
+            this.get('showToolbar') === TOOLBAR_ABOVE_KEYBOARD;
+        if (!aboveKeyboard && view instanceof URLPickerView) {
+            options.alignEdge = 'left';
+        }
+        options.view = view;
+        this.get('popOver').show(options);
     },
 
     // --- Commands ---
