@@ -7,7 +7,7 @@ import {
     flushAllQueues,
     invokeInNextEventLoop,
 } from '../../foundation/RunLoop.js';
-import { POINTER_UP } from '../View.js';
+import { POINTER_DOWN, POINTER_UP } from '../View.js';
 import { AbstractControlView } from './AbstractControlView.js';
 import { Activatable } from './Activatable.js';
 
@@ -76,6 +76,13 @@ const ButtonView = Class({
     Extends: AbstractControlView,
 
     Mixin: [Activatable],
+
+    init: function () {
+        ButtonView.parent.init.apply(this, arguments);
+        this._ignoreUntil = 0;
+        this._prevFocused = null;
+        this.isKeyActivation = false;
+    },
 
     /**
         Property: O.ButtonView#isActive
@@ -298,13 +305,6 @@ const ButtonView = Class({
             const isKeyActivation =
                 !!event && !!event.type && event.type.startsWith('key');
             this.isKeyActivation = isKeyActivation;
-            if (!isKeyActivation) {
-                // This ensures that IME events have fired in text inputs, so
-                // if we're about to save or discard a record, we write any
-                // bindings through to it first.
-                this.focus();
-                flushAllQueues();
-            }
             const target = this.get('target') || this;
             const action = this.get('action');
             const method = action ? null : this.get('method');
@@ -347,14 +347,22 @@ const ButtonView = Class({
         ignoring them. We can also add any delay for the noRepeatWithin property
         to extend the time we ignore further clicks.
     */
-    _ignoreUntil: 0,
 
     /**
-        Method (private): O.ButtonView#_setIgnoreUntil
+        Property (private): O.ButtonView#_prevFocused
+        Type: Element|null
+
+        Store whatever was in focus on mousedown, so we can restore it on click
+        after activating the button.
     */
+
     _setIgnoreUntil() {
         this._ignoreUntil = Date.now() + this.get('noRepeatWithin');
     },
+
+    _storeFocus: function () {
+        this._prevFocused = document.activeElement;
+    }.on(POINTER_DOWN),
 
     /**
         Method: O.ButtonView#mouseActivate
@@ -379,11 +387,23 @@ const ButtonView = Class({
         ) {
             this._ignoreUntil = 4102444800000; // 1st Jan 2100...
             invokeInNextEventLoop(this._setIgnoreUntil, this);
-            this.activate(event);
+            // Restore focus to wherever it was before the button was clicked.
+            if (document.activeElement !== this.get('layer')) {
+                // This ensures that IME events have fired in text inputs,
+                // so if we're about to save or discard a record, we write
+                // any bindings through to it first.
+                this.focus();
+                flushAllQueues();
+            }
+            if (this._prevFocused?.isConnected) {
+                this._prevFocused.focus();
+            } else {
+                this.blur();
+            }
+            this._prevFocused = null;
             event.preventDefault();
-            // Firefox keeps focus on the button after clicking. If the user
-            // then hits "space", it will activate the button again!
-            this.blur();
+            event.stopPropagation();
+            this.activate(event);
         }
     }.on(POINTER_UP, 'click'),
 
@@ -399,10 +419,10 @@ const ButtonView = Class({
     keyboardActivate: function (event) {
         const key = lookupKey(event);
         if (key === 'Enter' || key === 'Space') {
-            this.activate(event);
             event.preventDefault();
             // Don't want to trigger global keyboard shortcuts
             event.stopPropagation();
+            this.activate(event);
         }
         if (key === 'Escape') {
             this.blur();
