@@ -26,6 +26,13 @@ const sniffContentType = (type, name) => {
                 // Orange.fr sends voice messages via email with mp3
                 // attachments, but application/octet-stream MIME type
                 type = 'audio/mpeg';
+            } else if (/\.xls$/i.test(name)) {
+                // Zoho has been using application/zip as the MIME type for
+                // Excel documents
+                type = 'application/vnd.ms-excel';
+            } else if (/\.xlsx$/i.test(name)) {
+                type =
+                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
             }
             break;
     }
