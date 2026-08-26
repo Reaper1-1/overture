@@ -885,13 +885,36 @@ const WindowedQuery = Class({
         }
     },
 
+    /**
+        Method: O.WindowedQuery#getObservedRanges
+
+        Returns the ranges of the query that are currently in use, in the
+        query's own index space. These decide which windows are worth
+        fetching when refreshing or dropping stale packets. By default this
+        is the ranges of the registered range observers; something fronting
+        the query with a different view of it (e.g. <O.SubsetQueryProxy>) can
+        replace this to report only what is really visible.
+
+        A range without an `end` is treated as extending to the end of the
+        list.
+
+        Returns:
+            {Object[]} A list of { start, end } ranges.
+    */
+    getObservedRanges() {
+        const rangeObservers = meta(this).rangeObservers;
+        return rangeObservers
+            ? rangeObservers.map((observer) => observer.range)
+            : [];
+    },
+
     _fetchObservedWindows() {
-        const ranges = meta(this).rangeObservers;
+        const ranges = this.getObservedRanges();
         const length = this.get('length');
         const windowSize = this.get('windowSize');
         if (ranges) {
             for (let i = ranges.length - 1; i >= 0; i -= 1) {
-                const range = ranges[i].range;
+                const range = ranges[i];
                 if (!('start' in range) && !('end' in range)) {
                     continue;
                 }
@@ -1468,9 +1491,7 @@ const WindowedQuery = Class({
         const recordRequests = [];
         const idRequests = [];
         const optimiseFetching = this.get('optimiseFetching');
-        const ranges = (meta(this).rangeObservers || []).map(
-            (observer) => observer.range,
-        );
+        const ranges = this.getObservedRanges();
         const fetchAllObservedIds =
             refreshRequested && !this.get('canGetDeltaUpdates');
         const prefetch = this.get('prefetch');

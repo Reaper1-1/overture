@@ -1,4 +1,4 @@
-import { Class } from '../../core/Core.js';
+import { Class, meta } from '../../core/Core.js';
 import { bind, Binding } from '../../foundation/Binding.js';
 import { Enumerable } from '../../foundation/Enumerable.js';
 import { Obj } from '../../foundation/Object.js';
@@ -40,15 +40,25 @@ const SubsetQueryProxy = Class({
         const query = this.query;
         query.nextEventTarget = this;
         query.addObserverForRange(all, this, 'proxyRangeChange');
+        // The views observe ranges on us, not the query, so tell the query
+        // what is actually in use rather than letting it see our catch-all
+        // observer and conclude the whole list is.
+        if (query.getObservedRanges) {
+            this._getObservedRanges = () => this.getObservedRealRanges();
+            query.getObservedRanges = this._getObservedRanges;
+        }
     },
 
     destroy() {
         const query = this.query;
         query.removeObserverForRange(all, this, 'proxyRangeChange');
-        // Only relinquish the event target if it's still us: a newer proxy may
-        // already have taken over this query.
+        // Only relinquish the event target and range hook if they're still
+        // ours: a newer proxy may already have taken over this query.
         if (query.nextEventTarget === this) {
             query.nextEventTarget = null;
+        }
+        if (query.getObservedRanges === this._getObservedRanges) {
+            delete query.getObservedRanges;
         }
         SubsetQueryProxy.parent.destroy.call(this);
     },
@@ -196,6 +206,74 @@ const SubsetQueryProxy = Class({
             acc += count;
         }
         return starts;
+    },
+
+    /**
+        Method: O.SubsetQueryProxy#getObservedRealRanges
+
+        Returns the parts of the underlying query that are covered by our
+        range observers, in the query's index space. The union of observed
+        proxy ranges is translated to real indexes and then split around
+        collapsed groups, so a large collapsed group in the middle of the
+        visible area doesn't get fetched.
+
+        Returns:
+            {Object[]} A list of { start, end } ranges.
+    */
+    getObservedRealRanges() {
+        const rangeObservers = meta(this).rangeObservers;
+        if (!rangeObservers || !rangeObservers.length) {
+            return [];
+        }
+        const length = this.get('length') || 0;
+        let start = Infinity;
+        let end = 0;
+        for (let i = rangeObservers.length - 1; i >= 0; i -= 1) {
+            const range = rangeObservers[i].range;
+            let observerStart = range.start || 0;
+            let observerEnd = 'end' in range ? range.end : length;
+            if (observerStart < 0) {
+                observerStart += length;
+            }
+            if (observerEnd < 0) {
+                observerEnd += length;
+            }
+            start = Math.min(start, Math.max(0, observerStart));
+            end = Math.max(end, Math.min(length, observerEnd));
+        }
+        if (start >= end) {
+            return [];
+        }
+        const collapsed = this.collapsedGroups;
+        const ranges = this.get('_groupRanges');
+        const result = [];
+        let acc = 0;
+        let current = null;
+        for (let i = 0, l = ranges.length; i < l; i += 1) {
+            const range = ranges[i];
+            if (collapsed.has(i)) {
+                current = null;
+                continue;
+            }
+            // Portion of this group's proxy space [acc, acc + count) that is
+            // observed, mapped back to real indexes.
+            const from = Math.max(start, acc) - acc;
+            const to = Math.min(end, acc + range.count) - acc;
+            if (from < to) {
+                const realStart = range.start + from;
+                const realEnd = range.start + to;
+                if (current && current.end === realStart) {
+                    current.end = realEnd;
+                } else {
+                    result.push((current = { start: realStart, end: realEnd }));
+                }
+            }
+            acc += range.count;
+            if (acc >= end) {
+                break;
+            }
+        }
+        return result;
     },
 
     // --- Updates from the underlying query ---
