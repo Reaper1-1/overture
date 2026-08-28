@@ -282,6 +282,10 @@ const SelectionController = Class({
     // ---
 
     selectOne(delta) {
+        if (this.focused) {
+            this.focused.moveSelection(delta);
+            return;
+        }
         const query = this.get('visible') || this.get('content');
         const length = query.get('length');
         if (!length) {
@@ -300,13 +304,7 @@ const SelectionController = Class({
             index = limit((delta > 0 ? last : first) + delta, 0, length - 1);
         }
         this.selectNone();
-        if (!this.focused) {
-            this.selectIndex(index, true, false);
-        } else if (indexes) {
-            this.focused.set('index', index);
-        } else {
-            this.focused.moveSelection(delta);
-        }
+        this.selectIndex(index, true, false);
     },
 
     selectUp() {
