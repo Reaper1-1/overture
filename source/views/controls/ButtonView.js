@@ -396,7 +396,9 @@ const ButtonView = Class({
                 flushAllQueues();
             }
             if (this._prevFocused?.isConnected) {
-                this._prevFocused.focus();
+                this._prevFocused.focus({
+                    preventScroll: true,
+                });
             } else {
                 this.blur();
             }
