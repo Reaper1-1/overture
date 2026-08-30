@@ -127,15 +127,21 @@ const AutoCompleteView = Class({
         if (this.get('isInDocument')) {
             layer.addEventListener(POINTER_MOVE, this, false);
             layer.addEventListener('mouseout', this, false);
+            layer.addEventListener('mousedown', this, false);
         } else {
+            layer.removeEventListener('mousedown', this, false);
             layer.removeEventListener('mouseout', this, false);
             layer.removeEventListener(POINTER_MOVE, this, false);
         }
     }.observes('isInDocument'),
 
+    // Stop the input losing focus when interacting with the popover. Views
+    // don't get pointer events for touch (see RootView), but the browser
+    // moves focus on the compatibility mousedown that follows a tap, so we
+    // listen for that on the layer directly too.
     mousedown: function (event) {
         event.preventDefault();
-    }.on(POINTER_DOWN),
+    }.on(POINTER_DOWN, 'mousedown'),
 });
 
 // ---
