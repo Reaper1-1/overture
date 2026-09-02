@@ -319,6 +319,9 @@ const Drag = Class({
         }
         if (this.isNative) {
             const dataTransfer = this.event.dataTransfer;
+            if (!dataTransfer) {
+                return [];
+            }
             // The `types` property only contains "Files" and not the actual
             // types of the items, so you need to iterate through items to get
             // the real set of types. However, in Safari `items` is empty until
