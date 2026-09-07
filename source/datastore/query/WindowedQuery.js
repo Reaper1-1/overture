@@ -917,6 +917,9 @@ const WindowedQuery = Class({
             {O.WindowedQuery} Returns self.
     */
     clientDidGenerateUpdate(update) {
+        if (!this.is(READY)) {
+            return this;
+        }
         const store = this.get('store');
         const toId = (sk) => store.getIdFromStoreKey(sk) || '#' + sk;
         this.log.push([
