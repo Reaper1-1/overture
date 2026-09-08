@@ -311,13 +311,20 @@ const SubsetQueryProxy = Class({
         );
     }.on('query:updated'),
 
+    // Translates a range change in the underlying query into our index
+    // space. Any change that shifts later items (adds/removes) is already
+    // reported by the query as running to the end of the list, so we only
+    // need to map both ends; an update to a window of ids in the middle
+    // stays local rather than invalidating everything below it.
     proxyRangeChange(query, start, end) {
         if (!this.collapsedGroups.size) {
             this.rangeDidChange(start, end);
             return;
         }
-        const proxyStart = this._visibleCountBefore(start);
-        this.rangeDidChange(proxyStart, this.get('length') || 0);
+        this.rangeDidChange(
+            this._visibleCountBefore(start),
+            this._visibleCountBefore(end),
+        );
     },
 
     // --- Collapsing ---
